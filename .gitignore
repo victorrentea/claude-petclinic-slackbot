@@ -1,0 +1,7 @@
+.env
+sessions.json
+.venv/
+workdir/
+__pycache__/
+*.log
+.playwright-mcp/

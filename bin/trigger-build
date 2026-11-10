@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs INSIDE the santa-claude sandbox. The bot's only way to start CI: push the current HEAD of
+# the petclinic clone to refs/heads/claude/<current-branch> (CI runs on every branch push).
+# It refuses main and odd branch names. GitHub-side, the token can only touch victorrentea/petclinic.
+set -eu
+cd "${WORKSPACE_DIR:?sbx sets WORKSPACE_DIR to the mounted petclinic clone}"
+branch=$(git branch --show-current)
+case "$branch" in
+  ""|main) echo "refusing: commit on a feature branch first (git switch -c <name>)"; exit 1 ;;
+  *[!A-Za-z0-9._-]*) echo "refusing: branch name '$branch' not allowed"; exit 1 ;;
+esac
+git push --force-with-lease origin "HEAD:refs/heads/claude/$branch"
+sleep 5
+gh run list --branch "claude/$branch" --limit 1 --json url,status,workflowName \
+  --jq '.[] | "\(.workflowName): \(.status) \(.url)"'
