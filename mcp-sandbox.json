@@ -4,6 +4,10 @@
       "command": "dbhub",
       "args": ["--transport", "stdio",
                "--dsn", "postgres://petclinic:petclinic@host.docker.internal:5432/petclinic"]
+    },
+    "petclinic-issues": {
+      "type": "http",
+      "url": "http://host.docker.internal:7431/mcp"
     }
   }
 }

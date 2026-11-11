@@ -2,7 +2,7 @@
 
 1. answers  - @Santa Claude in a channel (or a DM) -> `claude -p`, one Claude session per Slack
               thread, so everyone replying in that thread talks to the same session (multiplayer).
-2. acts     - code, local git, GitHub issues/CI, petclinic DB - inside the `santa-claude` sbx sandbox.
+2. acts     - code, local git, GitHub issues/CI, petclinic DB - inside the `claude-petclinic-slackbot` sbx sandbox.
 3. proactive- watches channels it is in; after QUIET_SECONDS of silence it reads the recent
               conversation and speaks up only if it has something useful to add.
 
@@ -16,9 +16,12 @@ import threading
 import time
 from pathlib import Path
 
+import issues_mcp
 from dotenv import load_dotenv
 from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+# websocket-client, not the builtin adapter: after the Mac slept, the builtin one looped on
+# BrokenPipeError every 10 s for hours (10-11 Nov 2026) and never got a working socket back.
+from slack_bolt.adapter.socket_mode.websocket_client import SocketModeHandler
 
 HERE = Path(__file__).parent
 load_dotenv(HERE / ".env")
@@ -26,10 +29,10 @@ load_dotenv(HERE / ".env")
 WORKDIR = os.path.expanduser(os.environ.get("WORKDIR", str(HERE / "workdir")))
 MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")
 WATCH_MODEL = os.environ.get("CLAUDE_WATCH_MODEL", "haiku")
-# Every Claude turn runs INSIDE the Docker sandbox `santa-claude` (sbx): it sees only WORKDIR,
+# Every Claude turn runs INSIDE the Docker sandbox `claude-petclinic-slackbot` (sbx): it sees only WORKDIR,
 # the network goes through sbx's proxy/policy, and secrets (Claude OAuth, GitHub token) are
 # injected by that proxy - they never enter the sandbox.
-SANDBOX = os.environ.get("SANDBOX", "santa-claude")
+SANDBOX = os.environ.get("SANDBOX", "claude-petclinic-slackbot")
 MCP_CONFIG = "/home/agent/mcp.json"  # inside the sandbox: ONLY the petclinic Postgres MCP
 TRIGGER_BUILD = "/home/agent/bin/trigger-build"  # inside the sandbox, root-owned
 TOOLS = "Read,Grep,Glob,Edit,Write,Bash,WebSearch,WebFetch"
@@ -38,6 +41,7 @@ TOOLS = "Read,Grep,Glob,Edit,Write,Bash,WebSearch,WebFetch"
 ALLOW = ",".join([
     "WebSearch", "WebFetch",
     "mcp__postgres-db",                                     # petclinic DB
+    "mcp__petclinic-issues",                                # issue writes, via issues_mcp.py on the host
     "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
     "Bash(git add:*)", "Bash(git commit:*)", "Bash(git switch:*)", "Bash(git branch:*)",
     "Bash(gh api:*)",                                       # GitHub REST; sbx policy blocks all writes
@@ -57,14 +61,16 @@ PERSONA = (
     "(github.com/victorrentea/petclinic). You can: read and edit its code, use git locally "
     "(commit on a feature branch, never on main), read GitHub issues with "
     "`gh api repos/victorrentea/petclinic/issues` / `.../issues/<n>` / `.../issues/<n>/comments` "
-    "(`gh issue ...` does not work here: GraphQL is blocked; you cannot comment on or close issues), "
+    "(`gh issue ...` does not work here: GraphQL is blocked), create, comment on, relabel, "
+    "edit or close issues ONLY through the petclinic-issues MCP tools (any other GitHub write is "
+    "blocked), "
     "read CI runs with `gh run list/view`, start a CI build by running "
     f"`{TRIGGER_BUILD}` (it pushes your current branch as claude/<branch>), "
     "and query the petclinic Postgres database through the postgres-db MCP tools. "
     "You have no access to email, other files on this machine, or anything else; if asked, say so."
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", force=True)  # mcp sets up logging on import
 log = logging.getLogger("santa-claude")
 
 app = App(token=os.environ["SLACK_BOT_TOKEN"])
@@ -105,7 +111,9 @@ def run_claude(prompt: str, session_id: str | None = None, model: str = MODEL,
     if session_id:
         cmd += ["--resume", session_id]
     t0 = time.time()
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    # stdin=DEVNULL: otherwise `claude -p` waits 3 s for piped stdin on every turn
+    out = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                         timeout=timeout)
     log.info("claude %s in %.1fs (rc=%s)", model, time.time() - t0, out.returncode)
     try:
         res = json.loads(out.stdout)
@@ -204,4 +212,5 @@ watcher = Watcher()
 
 if __name__ == "__main__":
     log.info("Santa Claude user %s, workdir %s, proactive=%s", SANTA_USER_ID, WORKDIR, PROACTIVE)
+    threading.Thread(target=issues_mcp.serve, daemon=True, name="petclinic-issues").start()
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
