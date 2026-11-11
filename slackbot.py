@@ -54,6 +54,10 @@ ALLOW = ",".join([
 PROACTIVE = os.environ.get("PROACTIVE", "1") == "1"
 QUIET_SECONDS = int(os.environ.get("QUIET_SECONDS", "20"))
 SESSIONS_FILE = HERE / "sessions.json"
+# Santa works ONLY in the team channel, so every prompt anyone gives it is visible to the whole
+# team (and to the trainer). DMs and other channels get a pointer there, never a Claude turn.
+TEAM_CHANNEL = os.environ.get("TEAM_CHANNEL", "C0B5B3V8DAB")  # #all-test-agentic-how
+PROMPTS_LOG = HERE / "prompts.log"  # every prompt that reached Claude: who, where, what
 
 PERSONA = (
     "You are 'Santa Claude', a teammate in a Slack workspace used for a live training demo. "
@@ -144,6 +148,9 @@ def answer(channel: str, thread_ts: str, user: str, text: str, msg_ts: str):
         pass
     with _lock:
         sid = sessions.get(key)
+        with PROMPTS_LOG.open("a") as f:
+            f.write(json.dumps({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "thread": key,
+                                "user": name_of(user), "text": text}, ensure_ascii=False) + "\n")
     reply, new_sid = run_claude(f"{name_of(user)}: {strip_mention(text)}", sid)
     if new_sid:
         with _lock:
@@ -154,8 +161,20 @@ def answer(channel: str, thread_ts: str, user: str, text: str, msg_ts: str):
 
 # ---------- 1+2: answer when mentioned (or when replying in a thread Claude is part of) ----------
 
+def redirect(channel: str, thread_ts: str | None):
+    """Outside the team channel: point there instead of answering."""
+    app.client.chat_postMessage(
+        channel=channel, thread_ts=thread_ts,
+        text=f"I only work in <#{TEAM_CHANNEL}>, so the whole team sees what I'm asked. "
+             f"Mention me there. / Lucrez doar în <#{TEAM_CHANNEL}>, ca toată echipa să vadă "
+             "ce mi se cere: dă-mi tag acolo.")
+
+
 @app.event("app_mention")
 def on_mention(event):
+    if event["channel"] != TEAM_CHANNEL:
+        redirect(event["channel"], event.get("thread_ts") or event["ts"])
+        return
     thread_ts = event.get("thread_ts") or event["ts"]
     threading.Thread(target=answer, args=(event["channel"], thread_ts, event["user"],
                                           event["text"], event["ts"]), daemon=True).start()
@@ -166,11 +185,11 @@ def on_message(event):
     if event.get("subtype") or event.get("bot_id") or event.get("user") == SANTA_USER_ID:
         return
     channel, text, user = event["channel"], event.get("text", ""), event["user"]
-    if event.get("channel_type") == "im":  # DM: always answer, one session per DM thread
-        thread_ts = event.get("thread_ts") or event["ts"]
-        threading.Thread(target=answer, args=(channel, thread_ts, user, text, event["ts"]),
-                         daemon=True).start()
+    if event.get("channel_type") == "im":  # no private conversations: see TEAM_CHANNEL
+        redirect(channel, None)
         return
+    if channel != TEAM_CHANNEL:
+        return  # a mention there is answered by on_mention with the same pointer
     if f"<@{SANTA_USER_ID}>" in text:
         return  # handled by app_mention
     thread_ts = event.get("thread_ts")

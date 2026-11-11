@@ -6,3 +6,4 @@ __pycache__/
 *.log
 .playwright-mcp/
 .bot.pid
+prompts.log

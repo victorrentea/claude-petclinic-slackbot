@@ -9,7 +9,7 @@ Claude subscription (`claude -p`, no API key, no public URL — Socket Mode).
 
 | demo | how |
 |---|---|
-| 1. answers | `@claude …` in a channel, or a DM |
+| 1. answers | `@Santa Claude …` in the team channel `TEAM_CHANNEL` only (default #all-test-agentic-how): no DMs, no other channels, so everybody sees every prompt; each one is also appended to `prompts.log` |
 | multiplayer | anyone replies in that thread, no re-tag needed: one Claude session per thread (`sessions.json`) |
 | 2. acts | on its own petclinic clone in `./workdir` (see Permissions) |
 | 3. proactive | after `QUIET_SECONDS` (20) of silence in a channel, Haiku reads the last messages and speaks up only if useful (`PROACTIVE=0` turns it off) |

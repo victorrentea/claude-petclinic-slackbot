@@ -7,7 +7,7 @@
   "features": {
     "app_home": {
       "home_tab_enabled": false,
-      "messages_tab_enabled": true,
+      "messages_tab_enabled": false,
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
@@ -23,7 +23,6 @@
         "channels:read",
         "chat:write",
         "groups:history",
-        "im:history",
         "reactions:write",
         "users:read"
       ]
@@ -34,8 +33,7 @@
       "bot_events": [
         "app_mention",
         "message.channels",
-        "message.groups",
-        "message.im"
+        "message.groups"
       ]
     },
     "interactivity": {
