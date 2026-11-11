@@ -13,6 +13,7 @@ Claude subscription (`claude -p`, no API key, no public URL — Socket Mode).
 | multiplayer | anyone replies in that thread, no re-tag needed: one Claude session per thread (`sessions.json`) |
 | 2. acts | on its own petclinic clone in `./workdir` (see Permissions) |
 | 3. proactive | after `QUIET_SECONDS` (20) of silence in a channel, Haiku reads the last messages and speaks up only if useful (`PROACTIVE=0` turns it off) |
+| 4. deploys | every push to `claude/*` redeploys the ONE shared preview on Railway (`petclinic-preview`, eu-west): https://petclinic-production-28f17f61.up.railway.app, by petclinic's `deploy-preview.yml` (`docker/railway/Dockerfile`). Keep it off outside a training: `bin/preview on|off|status` |
 
 Invite Santa Claude into a channel with `/invite @Santa Claude`.
 

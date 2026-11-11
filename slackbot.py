@@ -35,6 +35,7 @@ WATCH_MODEL = os.environ.get("CLAUDE_WATCH_MODEL", "haiku")
 SANDBOX = os.environ.get("SANDBOX", "claude-petclinic-slackbot")
 MCP_CONFIG = "/home/agent/mcp.json"  # inside the sandbox: ONLY the petclinic Postgres MCP
 TRIGGER_BUILD = "/home/agent/bin/trigger-build"  # inside the sandbox, root-owned
+PREVIEW_URL = "https://petclinic-production-28f17f61.up.railway.app"  # see bin/preview
 TOOLS = "Read,Grep,Glob,Edit,Write,Bash,WebSearch,WebFetch"
 # Pre-approved. Anything else is denied, because `claude -p` cannot ask for permission.
 # Edit/Write/Read are NOT listed: --permission-mode acceptEdits keeps them inside WORKDIR.
@@ -44,9 +45,11 @@ ALLOW = ",".join([
     "mcp__petclinic-issues",                                # issue writes, via issues_mcp.py on the host
     "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
     "Bash(git add:*)", "Bash(git commit:*)", "Bash(git switch:*)", "Bash(git branch:*)",
+    "Bash(git fetch)",                                      # fresh origin/main before a new branch
     "Bash(gh api:*)",                                       # GitHub REST; sbx policy blocks all writes
     "Bash(gh run list:*)", "Bash(gh run view:*)",           # CI: read
     f"Bash({TRIGGER_BUILD})",                                # CI: push to claude/* only
+    f"Bash(curl -s {PREVIEW_URL}:*)",                        # the deployed preview (bin/preview)
 ])
 PROACTIVE = os.environ.get("PROACTIVE", "1") == "1"
 QUIET_SECONDS = int(os.environ.get("QUIET_SECONDS", "20"))
@@ -59,7 +62,9 @@ PERSONA = (
     "(Slack mrkdwn: *bold*, `code`, bullet lists; no markdown headings or tables).\n"
     "You work on the petclinic project checked out in your working directory "
     "(github.com/victorrentea/petclinic). You can: read and edit its code, use git locally "
-    "(commit on a feature branch, never on main), read GitHub issues with "
+    "(commit on a feature branch, never on main; start every new branch from the latest "
+    "origin/main: `git fetch` then `git switch -c <name> origin/main` - your local main is stale), "
+    "read GitHub issues with "
     "`gh api repos/victorrentea/petclinic/issues` / `.../issues/<n>` / `.../issues/<n>/comments` "
     "(`gh issue ...` does not work here: GraphQL is blocked), create, comment on, relabel, "
     "edit or close issues ONLY through the petclinic-issues MCP tools (any other GitHub write is "
@@ -67,6 +72,11 @@ PERSONA = (
     "read CI runs with `gh run list/view`, start a CI build by running "
     f"`{TRIGGER_BUILD}` (it pushes your current branch as claude/<branch>), "
     "and query the petclinic Postgres database through the postgres-db MCP tools. "
+    "Every push to claude/* is also DEPLOYED, by the `Deploy preview` workflow, to the one "
+    f"shared preview {PREVIEW_URL} (last push wins, ~5 min: build on Railway, then start). "
+    "Give people that URL; follow the deploy with `gh run list --workflow deploy-preview.yml` "
+    f"and check it with `curl -s {PREVIEW_URL}/actuator/health`. Outside a training the "
+    "preview may be switched off; only Victor can switch it on, so say so if it doesn't answer. "
     "You have no access to email, other files on this machine, or anything else; if asked, say so."
 )
 

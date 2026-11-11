@@ -1,0 +1,38 @@
+#!/bin/zsh
+# The bot's deploy target: Railway project petclinic-preview (petclinic + Postgres, eu-west).
+# Every push to claude/** redeploys it (petclinic/.github/workflows/deploy-preview.yml).
+# Keep it OFF outside a training: off costs ~$0, on costs ~$13/month pro rata.
+#
+#   bin/preview on       start Postgres, then the app; returns when the URL answers
+#   bin/preview off      remove both deployments (the Postgres volume, i.e. the data, stays)
+#   bin/preview status
+set -euo pipefail
+PROJECT=6a421693-8f1b-488a-84d2-ad1351f36700
+URL=https://petclinic-production-28f17f61.up.railway.app
+rw() { railway "$@" --project $PROJECT --environment production; }
+state() { rw service status --service $1 --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"], "(stopped)" if d.get("stopped") else "")'; }
+
+case "${1:-status}" in
+  on)
+    # `railway redeploy` finds nothing once `down` removed the deployment, so this brings the
+    # last removed one back with the image it already built: no rebuild, ~1 min.
+    for svc in Postgres petclinic; do
+      id=$(rw deployment list --service $svc --json | python3 -c 'import sys,json; d=json.load(sys.stdin); d=d if isinstance(d,list) else d["deployments"]; print(d[0]["id"])')
+      railway api 'mutation($id:String!){deploymentRedeploy(id:$id, usePreviousImageTag:true){id status}}' --var id=$id >/dev/null
+      echo "$svc: redeploying $id"
+    done
+    echo "waiting for $URL (a cold start rebuilds nothing, but the JVM needs ~30 s)..."
+    for i in {1..60}; do
+      curl -fsS "$URL/actuator/health" 2>/dev/null | grep -q UP && { echo "ON: $URL"; exit 0; }
+      sleep 5
+    done
+    echo "not answering after 5 min: bin/preview status, or railway logs" >&2; exit 1 ;;
+  off)
+    rw down --service petclinic --yes
+    rw down --service Postgres --yes
+    echo "OFF" ;;
+  status)
+    echo "petclinic: $(state petclinic)"; echo "Postgres:  $(state Postgres)"
+    echo "$URL -> $(curl -s -o /dev/null -w '%{http_code}' $URL/actuator/health)" ;;
+  *) echo "usage: $0 on|off|status" >&2; exit 2 ;;
+esac

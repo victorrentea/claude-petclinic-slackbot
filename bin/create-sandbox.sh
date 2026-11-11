@@ -9,6 +9,7 @@ S=${SANDBOX:-claude-petclinic-slackbot}
 sbx create --name $S claude "$PWD/workdir"
 # network: petclinic Postgres on the host; no GitHub writes over the API at all (incl. GraphQL)
 sbx policy allow network --sandbox $S localhost:5432,localhost:7431  # DB + issues_mcp.py
+sbx policy allow network --sandbox $S petclinic-production-28f17f61.up.railway.app  # the preview (bin/preview)
 sbx policy deny network --sandbox $S api.github.com --method POST,PATCH,PUT,DELETE
 sbx policy deny network --sandbox $S uploads.github.com --method POST,PATCH,PUT,DELETE
 # GitHub identity: 1-hour App token minted on the host, injected by the sbx proxy
